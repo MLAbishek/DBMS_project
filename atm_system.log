@@ -1,0 +1,2 @@
+2025-04-09 18:40:10,400 - atm_system - ERROR - Database initialization failed: 1045 (28000): Access denied for user 'root'@'localhost' (using password: YES)
+2025-04-09 18:40:43,147 - atm_system - ERROR - Database initialization failed: 1045 (28000): Access denied for user 'root'@'localhost' (using password: YES)
