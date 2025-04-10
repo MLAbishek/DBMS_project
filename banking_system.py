@@ -36,44 +36,49 @@ def create_db_connection():
         return conn, cursor
     except Error as e:
         messagebox.showerror("Database Error", f"Failed to connect to database: {e}")
-        exit(1)
+        return None, None
 
 
 # Database setup
 try:
     conn, cursor = create_db_connection()
+    if conn and cursor:
+        # Create database if not exists
+        cursor.execute("CREATE DATABASE IF NOT EXISTS banking_system")
+        cursor.execute("USE banking_system")
 
-    # Create database if not exists
-    cursor.execute("CREATE DATABASE IF NOT EXISTS banking_system")
-    cursor.execute("USE banking_system")
+        # Create tables
+        cursor.execute(
+            """CREATE TABLE IF NOT EXISTS users (
+            user_id INT AUTO_INCREMENT PRIMARY KEY,
+            username VARCHAR(255) UNIQUE NOT NULL,
+            password VARCHAR(255) NOT NULL,
+            name VARCHAR(255) NOT NULL,
+            phone VARCHAR(20),
+            balance DECIMAL(10,2) DEFAULT 0.00,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )"""
+        )
 
-    # Create tables
-    cursor.execute(
-        """CREATE TABLE IF NOT EXISTS users (
-        user_id INT AUTO_INCREMENT PRIMARY KEY,
-        username VARCHAR(255) UNIQUE NOT NULL,
-        password VARCHAR(255) NOT NULL,
-        name VARCHAR(255) NOT NULL,
-        phone VARCHAR(20),
-        balance DECIMAL(10,2) DEFAULT 0.00,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )"""
-    )
+        cursor.execute(
+            """CREATE TABLE IF NOT EXISTS transactions (
+            trans_id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT,
+            type VARCHAR(50),
+            amount DECIMAL(10,2),
+            balance DECIMAL(10,2),
+            notes VARCHAR(255),
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(user_id)
+        )"""
+        )
 
-    cursor.execute(
-        """CREATE TABLE IF NOT EXISTS transactions (
-        trans_id INT AUTO_INCREMENT PRIMARY KEY,
-        user_id INT,
-        type VARCHAR(50),
-        amount DECIMAL(10,2),
-        balance DECIMAL(10,2),
-        notes VARCHAR(255),
-        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(user_id)
-    )"""
-    )
-
-    conn.commit()
+        conn.commit()
+        cursor.close()
+        conn.close()
+    else:
+        messagebox.showerror("Database Error", "Failed to initialize database")
+        exit(1)
 
 except Error as e:
     messagebox.showerror("Database Error", f"Failed to connect to database: {e}")
@@ -503,9 +508,6 @@ class ModernBankingSystem:
             messagebox.showerror("Error", "Please enter both username and password")
             return
 
-        # Hash the password for security
-        hashed_password = self.hash_password(password)
-
         try:
             # Re-establish connection to handle potential timeouts
             conn, cursor = create_db_connection()
@@ -513,7 +515,7 @@ class ModernBankingSystem:
 
             cursor.execute(
                 "SELECT * FROM users WHERE username=%s AND password=%s",
-                (username, hashed_password),
+                (username, password),
             )
             user = cursor.fetchone()
 
@@ -527,11 +529,6 @@ class ModernBankingSystem:
             conn.close()
         except Error as e:
             messagebox.showerror("Database Error", f"Login failed: {e}")
-
-    def hash_password(self, password):
-        # Simple password hashing for demonstration
-        # In production, use a more secure method with salt
-        return hashlib.sha256(password.encode()).hexdigest()
 
     def show_register_screen(self):
         self.clear_window()
@@ -604,9 +601,6 @@ class ModernBankingSystem:
                 messagebox.showerror("Error", "Phone number must be 10 digits!")
                 return
 
-            # Hash password for secure storage
-            hashed_password = self.hash_password(password)
-
             # Re-establish connection to handle potential timeouts
             conn, cursor = create_db_connection()
             cursor.execute("USE banking_system")
@@ -616,7 +610,7 @@ class ModernBankingSystem:
                 INSERT INTO users (username, password, name, phone)
                 VALUES (%s, %s, %s, %s)
             """,
-                (username, hashed_password, name, phone),
+                (username, password, name, phone),
             )
             conn.commit()
 

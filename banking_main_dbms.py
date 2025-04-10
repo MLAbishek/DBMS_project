@@ -342,6 +342,16 @@ class ModernBankingSystem:
         )
         withdraw_btn.pack(side="left", padx=5)
 
+        # Add Transfer button
+        transfer_btn = ttk.Button(
+            btn_frame,
+            text="Transfer",
+            command=self.show_transfer_screen,
+            style="Action.TButton",
+            width=15,
+        )
+        transfer_btn.pack(side="left", padx=5)
+
         # Recent transactions in Account tab
         recent_frame = ttk.LabelFrame(
             account_tab, text="Recent Transactions", padding=10
@@ -595,7 +605,7 @@ class ModernBankingSystem:
                 return
 
             # Hash password for secure storage
-            hashed_password = self.hash_password(password)
+            hashed_password = password
 
             # Re-establish connection to handle potential timeouts
             conn, cursor = create_db_connection()
@@ -1014,6 +1024,151 @@ class ModernBankingSystem:
         for widget in self.root.winfo_children():
             if widget != self.clock_label:  # Keep the clock
                 widget.destroy()
+
+    def show_transfer_screen(self):
+        self.clear_window()
+
+        transfer_card = ttk.Frame(self.root, style="Card.TFrame")
+        transfer_card.place(relx=0.5, rely=0.4, anchor="center", width=500)
+
+        ttk.Label(transfer_card, text="Transfer Money", style="Header.TLabel").pack(
+            pady=20, padx=40
+        )
+
+        form_frame = ttk.Frame(transfer_card)
+        form_frame.pack(padx=40, pady=20, fill="x")
+
+        # Recipient username
+        ttk.Label(form_frame, text="Recipient Username:").pack(anchor="w")
+        self.recipient_entry = ttk.Entry(form_frame)
+        self.recipient_entry.pack(pady=(0, 10), fill="x")
+
+        # Amount
+        ttk.Label(form_frame, text="Amount ($):").pack(anchor="w")
+        self.transfer_amount_entry = ttk.Entry(form_frame)
+        self.transfer_amount_entry.pack(pady=(0, 10), fill="x")
+
+        # Notes
+        ttk.Label(form_frame, text="Notes (optional):").pack(anchor="w")
+        self.transfer_notes_entry = ttk.Entry(form_frame)
+        self.transfer_notes_entry.pack(pady=(0, 20), fill="x")
+
+        # Buttons
+        ttk.Button(
+            form_frame,
+            text="Transfer",
+            style="Action.TButton",
+            command=self.transfer_money,
+        ).pack(fill="x", pady=5)
+
+        ttk.Button(
+            form_frame,
+            text="Back",
+            style="Action.TButton",
+            command=self.setup_dashboard,
+        ).pack(fill="x", pady=5)
+
+    def transfer_money(self):
+        recipient_username = self.recipient_entry.get().strip()
+        try:
+            amount = float(self.transfer_amount_entry.get())
+        except ValueError:
+            messagebox.showerror("Error", "Please enter a valid amount")
+            return
+
+        notes = self.transfer_notes_entry.get().strip()
+
+        if not recipient_username or amount <= 0:
+            messagebox.showerror("Error", "Please provide a valid recipient and amount")
+            return
+
+        if amount > float(self.current_user[5]):
+            messagebox.showerror("Error", "Insufficient funds")
+            return
+
+        try:
+            # Re-establish connection to handle potential timeouts
+            conn, cursor = create_db_connection()
+            cursor.execute("USE banking_system")
+
+            # Check if recipient exists
+            cursor.execute(
+                "SELECT user_id, balance FROM users WHERE username = %s",
+                (recipient_username,),
+            )
+            recipient = cursor.fetchone()
+
+            if not recipient:
+                messagebox.showerror("Error", "Recipient not found")
+                return
+
+            recipient_id, recipient_balance = recipient
+
+            # Start transaction
+            cursor.execute("START TRANSACTION")
+
+            try:
+                # Deduct amount from sender
+                new_sender_balance = float(self.current_user[5]) - amount
+                cursor.execute(
+                    "UPDATE users SET balance = %s WHERE user_id = %s",
+                    (new_sender_balance, self.current_user[0]),
+                )
+
+                # Add amount to recipient
+                new_recipient_balance = float(recipient_balance) + amount
+                cursor.execute(
+                    "UPDATE users SET balance = %s WHERE user_id = %s",
+                    (new_recipient_balance, recipient_id),
+                )
+
+                # Record transaction for sender
+                cursor.execute(
+                    """
+                    INSERT INTO transactions (user_id, type, amount, balance, notes)
+                    VALUES (%s, 'transfer_out', %s, %s, %s)
+                    """,
+                    (self.current_user[0], amount, new_sender_balance, notes),
+                )
+
+                # Record transaction for recipient
+                cursor.execute(
+                    """
+                    INSERT INTO transactions (user_id, type, amount, balance, notes)
+                    VALUES (%s, 'transfer_in', %s, %s, %s)
+                    """,
+                    (recipient_id, amount, new_recipient_balance, notes),
+                )
+
+                # Commit transaction
+                conn.commit()
+
+                # Update current user data in memory
+                self.current_user[5] = new_sender_balance
+
+                # Refresh UI
+                self.refresh_transaction_history(self.trans_tree)
+                self.refresh_transaction_history(self.recent_tree, limit=5)
+
+                messagebox.showinfo(
+                    "Success", f"${amount:.2f} transferred to {recipient_username}"
+                )
+
+                # Clear entries
+                self.recipient_entry.delete(0, tk.END)
+                self.transfer_amount_entry.delete(0, tk.END)
+                self.transfer_notes_entry.delete(0, tk.END)
+
+            except Error as e:
+                conn.rollback()
+                messagebox.showerror("Transaction Error", f"Transfer failed: {e}")
+
+            finally:
+                cursor.close()
+                conn.close()
+
+        except Error as e:
+            messagebox.showerror("Database Error", f"Transfer failed: {e}")
 
 
 if __name__ == "__main__":
